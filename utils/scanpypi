@@ -735,7 +735,12 @@ def main():
     for d in args.existing_packages:
         existing_packages.extend(scan_packages_dir(d))
 
-   # tmp_path is where we'll extract the files later
+    # create the output directory
+    if args.output and not os.path.exists(args.output):
+        print("creating output directory {}".format(args.output))
+        os.makedirs(args.output, exist_ok=True)
+
+    # tmp_path is where we'll extract the files later
     tmp_prefix = 'scanpypi-'
     pkg_folder = args.output
     tmp_path = tempfile.mkdtemp(prefix=tmp_prefix)
