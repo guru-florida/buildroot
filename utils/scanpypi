@@ -694,6 +694,14 @@ def main():
         description="Creates buildroot packages from the metadata of "
                     "an existing PyPI packages and include it "
                     "in menuconfig")
+    parser.add_argument("--replace",
+                        help="replace existing packages",
+                        dest='replace_existing',
+                        action='store_true')
+    parser.add_argument("--skip-existing",
+                        help="skip over any existing packages",
+                        dest='skip_existing',
+                        action='store_true')
     parser.add_argument("packages",
                         help="list of packages to be created",
                         nargs='+')
@@ -780,18 +788,27 @@ def main():
             try:
                 os.makedirs(package.pkg_dir)
             except OSError as exception:
-                if exception.errno != errno.EEXIST:
-                    print("ERROR: ", exception.message, file=sys.stderr)
-                    continue
-                print('Error: Package {name} already exists'
-                      .format(name=package.pkg_dir))
-                del_pkg = input(
-                    'Do you want to delete existing package ? [y/N]')
-                if del_pkg.lower() == 'y':
+                if not args.replace_existing and not args.skip_existing:
+                    if exception.errno != errno.EEXIST:
+                        print("ERROR: ", exception.message, file=sys.stderr)
+                        continue
+                    print('Error: Package {name} already exists'
+                          .format(name=package.pkg_dir))
+                    del_pkg = input(
+                        'Do you want to delete existing package ? [y/N]')
+                    if del_pkg.lower() == 'y':
+                        shutil.rmtree(package.pkg_dir)
+                        os.makedirs(package.pkg_dir)
+                    else:
+                        continue
+                elif args.replace_existing:
+                    # replace existing
                     shutil.rmtree(package.pkg_dir)
                     os.makedirs(package.pkg_dir)
                 else:
+                    # continue on, bypass
                     continue
+
             package.create_package_mk()
 
             package.create_hash_file()
