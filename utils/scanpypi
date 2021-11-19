@@ -702,7 +702,14 @@ def main():
                         help="skip over any existing packages",
                         dest='skip_existing',
                         action='store_true')
-    parser.add_argument("packages",
+    parser.add_argument("--scan-packages",
+                        help="Scan a directory for existing python-* packages",
+                        metavar="DIR",
+                        dest='existing_packages',
+                        action='append',
+                        default=[],
+                        required=False)
+   parser.add_argument("packages",
                         help="list of packages to be created",
                         nargs='+')
     parser.add_argument("-o", "--output",
@@ -715,7 +722,20 @@ def main():
     args = parser.parse_args()
     packages = list(set(args.packages))
 
-    # tmp_path is where we'll extract the files later
+    # get collection of existing python packages
+    def scan_packages_dir(dir):
+        matching_pkgs = []
+        for f in os.scandir(dir):
+            if f.name.startswith('python-'):
+                matching_pkgs.append(f.name)
+        return matching_pkgs
+
+    # scan for existing packages (don't replace packages already existing in buildroot)
+    existing_packages = scan_packages_dir(args.output) if args.output and not args.replace_existing else []
+    for d in args.existing_packages:
+        existing_packages.extend(scan_packages_dir(d))
+
+   # tmp_path is where we'll extract the files later
     tmp_prefix = 'scanpypi-'
     pkg_folder = args.output
     tmp_path = tempfile.mkdtemp(prefix=tmp_prefix)
@@ -727,6 +747,11 @@ def main():
             # First we download the package
             # Most of the info we need can only be found inside the package
             print('Package:', package.buildroot_name)
+
+            if package.buildroot_name in existing_packages:
+                print('Existing Package:', package.buildroot_name)
+                continue
+
             print('Fetching package', package.real_name)
             try:
                 package.fetch_package_info()
