@@ -18,7 +18,7 @@ import hashlib
 import re
 import textwrap
 import tempfile
-import imp
+import pkg_resources
 from functools import wraps
 import six.moves.urllib.request
 import six.moves.urllib.error
@@ -27,9 +27,13 @@ from six.moves import map
 from six.moves import zip
 from six.moves import input
 if six.PY2:
+    import imp
     import StringIO
 else:
     import io
+    import importlib
+    import configparser
+    from importlib_metadata import Distribution
 
 BUF_SIZE = 65536
 
@@ -58,8 +62,8 @@ def setup_decorator(func, method):
     def closure(*args, **kwargs):
         # Any python packages calls its setup function to be installed.
         # Argument 'name' of this setup function is the package's name
-        BuildrootPackage.setup_args[kwargs['name']] = kwargs
-        BuildrootPackage.setup_args[kwargs['name']]['method'] = method
+        BuildrootPackage.current_package_args.update(kwargs)
+        BuildrootPackage.current_package_args['method'] = method
     return closure
 
 # monkey patch
@@ -128,6 +132,7 @@ class BuildrootPackage():
 
     """
     setup_args = {}
+    current_package_args = None
 
     def __init__(self, real_name, pkg_folder):
         self.real_name = real_name
@@ -293,11 +298,57 @@ class BuildrootPackage():
         """
         Loads the corresponding setup and store its metadata
         """
-        current_dir = os.getcwd()
-        os.chdir(self.tmp_extract)
-        sys.path.insert(0, self.tmp_extract)
-        s_file, s_path, s_desc = imp.find_module('setup', [self.tmp_extract])
-        imp.load_module('__main__', s_file, s_path, s_desc)
+
+        if six.PY2:
+            current_dir = os.getcwd()
+            os.chdir(self.tmp_extract)
+            sys.path.insert(0, self.tmp_extract)
+            try:
+                s_file, s_path, s_desc = imp.find_module('setup', [self.tmp_extract])
+                imp.load_module('__main__', s_file, s_path, s_desc)
+            except:
+                print("WARNING: Failed to load package module")
+                raise
+            finally:
+                # undo changes to current directory and module sys.path
+                os.chdir(current_dir)
+                sys.path.remove(self.tmp_extract)
+
+        else:
+            setup_file = os.path.join(self.tmp_extract, 'setup.py')
+            if os.path.exists(setup_file):
+                spec = importlib.util.spec_from_file_location("setup", setup_file)
+                setup_module = importlib.util.module_from_spec(spec)
+                BuildrootPackage.current_package_args = BuildrootPackage.setup_args[self.real_name] = dict()
+
+                spec.loader.exec_module(setup_module)
+
+            # patch in the config.cfg if it exists
+            setup_cfg_file = os.path.join(self.tmp_extract, 'setup.cfg')
+            if os.path.exists(setup_cfg_file):
+                if not BuildrootPackage.current_package_args:
+                    BuildrootPackage.current_package_args = BuildrootPackage.setup_args[self.real_name] = dict()
+                    BuildrootPackage.current_package_args['method'] = 'setuptools'
+                config = configparser.ConfigParser()
+                config.read(setup_cfg_file)
+                if 'metadata' in config:
+                    BuildrootPackage.current_package_args.update(config['metadata'])
+                if 'options' in config:
+                    # we special handle some options,
+                    # but insert straight into setup_args by default
+                    for k,v in config['options'].items():
+                        if k == 'install_requires':
+                            BuildrootPackage.current_package_args[k] = [p for p in v.split('\n') if bool(p.strip())]
+                        #else if k == 'project_urls':
+                        #    for u in v.split('\n'):
+                        #        url = u.split('=',1)
+                        else:
+                            BuildrootPackage.current_package_args[k] = v
+
+            BuildrootPackage.current_package_args = None
+
+
+        # process the package metadata
         if self.metadata_name in self.setup_args:
             pass
         elif self.metadata_name.replace('_', '-') in self.setup_args:
@@ -311,8 +362,7 @@ class BuildrootPackage():
             print('ERROR: Could not determine package metadata for {pkg}.\n'
                   .format(pkg=self.real_name))
             raise
-        os.chdir(current_dir)
-        sys.path.remove(self.tmp_extract)
+
 
     def get_requirements(self, pkg_folder):
         """
