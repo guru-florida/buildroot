@@ -376,12 +376,21 @@ class BuildrootPackage():
             self.pkg_req = None
             return set()
         self.pkg_req = self.setup_metadata['install_requires']
-        self.pkg_req = [re.sub(r'([-.\w]+).*', r'\1', req)
-                        for req in self.pkg_req]
+        #self.pkg_req = [re.sub(r'([-.\w]+).*', r'\1', req)
+        #                for req in self.pkg_req]
 
         # get rid of commented lines and also strip the package strings
         self.pkg_req = [item.strip() for item in self.pkg_req
                         if len(item) > 0 and item[0] != '#']
+
+        # run the list of deps with expressions through pkg_resources
+        # to filter based on platform, versioning, etc.
+        # See this SO:
+        # https://stackoverflow.com/questions/50130706/how-do-i-read-dependencies-from-requires-txt-of-a-python-package
+
+        # parse Requirement expressions
+        deps = [pkg_resources.Requirement(p) for p in self.pkg_req]
+        self.pkg_req = [p.name for p in deps if not p.marker or p.marker.evaluate()]
 
         req_not_found = self.pkg_req
         self.pkg_req = list(map(pkg_buildroot_name, self.pkg_req))
