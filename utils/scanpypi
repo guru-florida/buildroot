@@ -134,6 +134,9 @@ class BuildrootPackage():
     setup_args = {}
     current_package_args = None
 
+    # collection of Config.in files generated for each package and dependency
+    config_in_files = {}
+
     def __init__(self, real_name, pkg_folder):
         self.real_name = real_name
         self.buildroot_name = pkg_buildroot_name(self.real_name)
@@ -684,6 +687,10 @@ class BuildrootPackage():
         help_lines = [x + '\n' for x in help_lines]
         lines += help_lines
 
+        # store the name and path of this package so we can write
+        # a summary file later
+        self.config_in_files[self.metadata_name] = path_to_config
+
         with open(path_to_config, 'w') as config_file:
             config_file.writelines(lines)
 
@@ -709,7 +716,15 @@ def main():
                         action='append',
                         default=[],
                         required=False)
-   parser.add_argument("packages",
+   parser.add_argument("--master-config",
+                        help="Output a master Config.in file containing all packages and dependencies",
+                        dest='master_config',
+                        required=False)
+    parser.add_argument("--master-menu",
+                        help="wrap the config.in in a menu block with this title",
+                        dest='master_menu',
+                        required=False)
+    parser.add_argument("packages",
                         help="list of packages to be created",
                         nargs='+')
     parser.add_argument("-o", "--output",
@@ -848,6 +863,19 @@ def main():
             print("      and include an entry for the pkg in packages/Config.in")
             print()
             # printing an empty line for visual confort
+
+        # write the master config file
+        if args.master_config:
+            os.chdir(current_dir)
+            lines = []
+            if args.master_menu:
+                lines.append(f'menu "{args.master_menu}"\n')
+            lines.extend([f'\tsource "{file}"\n' for pkg, file in BuildrootPackage.config_in_files.items()])
+            if args.master_menu:
+                lines.append(f'endmenu\n')
+            with open(args.master_config, 'w') as mk_file:
+                mk_file.writelines(lines)
+
     finally:
         shutil.rmtree(tmp_path)
 
