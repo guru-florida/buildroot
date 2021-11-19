@@ -736,6 +736,11 @@ def main():
                 print('Error downloading package :', package.buildroot_name)
                 print()
                 continue
+            except DownloadFailed as error:
+                print('Error: {reason}'.format(reason=error))
+                print('Error downloading package :', package.buildroot_name)
+                print()
+                continue
 
             # extract the tarball
             try:
